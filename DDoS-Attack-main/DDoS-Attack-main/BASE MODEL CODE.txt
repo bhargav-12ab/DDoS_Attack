@@ -1,0 +1,71 @@
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import StratifiedKFold  
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, f1_score
+
+dataset_path = "dataset_sdn.csv"
+
+df = pd.read_csv(dataset_path)
+print(df.head())
+print(df.isnull().sum())
+print(df['label'].value_counts())
+
+target_variable = "label"
+features = df.drop(target_variable, axis=1)
+
+categorical_features = ["src", "dst"]  
+numerical_features = [col for col in features.columns if col not in categorical_features and df[col].dtype.kind in "biufc"]
+
+numeric_transformer = Pipeline(
+    steps=[("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
+)
+
+categorical_transformer = Pipeline(
+    steps=[
+        ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
+        ("onehot", OneHotEncoder(handle_unknown="ignore")),
+    ]
+)
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_transformer, numerical_features),
+        ("cat", categorical_transformer, categorical_features),
+    ]
+)
+
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)  
+
+rf_accuracy_scores = []
+rf_f1_scores = []
+knn_accuracy_scores = []
+knn_f1_scores = []
+
+for train_index, test_index in cv.split(features, df[target_variable]):
+    X_train_preprocessed = preprocessor.fit_transform(features.iloc[train_index])
+    X_test_preprocessed = preprocessor.transform(features.iloc[test_index])
+    y_train, y_test = df[target_variable].iloc[train_index], df[target_variable].iloc[test_index]
+
+    random_forest_model = RandomForestClassifier(n_estimators=100, random_state=42)
+    random_forest_model.fit(X_train_preprocessed, y_train)
+    random_forest_predictions = random_forest_model.predict(X_test_preprocessed)
+
+    knn_model = KNeighborsClassifier(n_neighbors=5)
+    knn_model.fit(X_train_preprocessed, y_train)
+    knn_predictions = knn_model.predict(X_test_preprocessed)
+
+    accuracy_rf = accuracy_score(y_test, random_forest_predictions)
+    f1_rf = f1_score(y_test, random_forest_predictions, average="micro")
+    accuracy_knn = accuracy_score(y_test, knn_predictions)
+    f1_knn = f1_score(y_test, knn_predictions, average="micro")
+
+    print("\nFold Performance:")
+    print(f"Random Forest - Accuracy: {accuracy_rf:.2f}")
+    print(f"Random Forest - F1-Score (micro): {f1_rf:.2f}")
+    print(f"KNN Classification - Accuracy: {accuracy_knn:.2f}")
+    print(f"KNN Classification - F1-Score (micro): {f1_knn:.2f}")
